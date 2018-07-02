@@ -66,3 +66,36 @@ function convertSpMToMBCSR(SpM::BCSRSpM)
 	return M
 end
 
+type symBCSRSpM
+	val::Array{Union{Array{Float64,2},LowerTriangular{Float64,Array{Float64,2}}},1}
+	col::Array{Int,1}
+	rowptr::Array{Int,1}
+	pattern::Array{Int,1}
+end
+
+function convertSMtoSPM(M::Array{Float64,2},pattern::Array{Int,1},tri::Bool)
+	
+	SpM::symBCSRSpM		= symBCSRSpM([],[],[0],pattern)
+	s::Int32		= length(pattern)/2
+	nnzb			= 0
+	
+	for i = 1:s
+		for j = 1:s
+			if j <= i
+				block = computeBlock(M,pattern,pattern,i,j)
+				if tri == true && i == j
+					block = LowerTriangular(block)
+				end
+				if norm(block) != 0.
+					push!(SpM.val,block)
+					push!(SpM.col,j)
+					nnzb += 1
+				end
+			end
+		end
+		push!(SpM.rowptr,nnzb)
+	end
+		
+	return SpM
+end
+	
