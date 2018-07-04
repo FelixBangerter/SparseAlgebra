@@ -9,29 +9,28 @@ type BCSRSpM
 	colpattern::Array{Int,1}
 end
 
+type symBCSRSpM
+	val::Array{Union{Array{Float64,2},LowerTriangular{Float64,Array{Float64,2}}},1}
+	col::Array{Int,1}
+	rowptr::Array{Int,1}
+	pattern::Array{Int,1}
+end
+
 function show(io::IO, SpM::BCSRSpM)
 	M = fillSpMWithChar(SpM,*)
 	display(M)
 end
 
-function fillSpMWithChar(SpM::BCSRSpM,a::Any)
-	dim1::Int32		= SpM.rowpattern[end]
-	dim2::Int32		= SpM.colpattern[end]
-	M::Array{Any,2}	= fill(a,dim1,dim2)
-	len::Int32		= length(SpM.rowptr)-1
-	δ::Array{Int,1}	= [SpM.rowptr[i+1]-SpM.rowptr[i] for i in 1:len]
-	
-	j = 1
-	for i = 1:len
-		z = 0
-		while z < δ[i]
-			M[rowpattern[2*(i-1)+1]:(rowpattern[2*(i-1)+2]),colpattern[2*(SpM.col[j]-1)+1]:(colpattern[2*(SpM.col[j]-1)+2])] = SpM.val[j]
-			j += 1
-			z += 1
-		end
+function symmetrizeLowerTriangular(lt::LowerTriangular{Float64,Array{Float64,2}})
+	M::Array{Float64,2} = Array{Float64,2}(lt)
+	n					= size(M,1)
+	N					= zeros(n,n)
+	for i = 1:n, j = 1:n
+		N[i,j] = M[i,j]
+		if i == j N[i,j] = 0. end
 	end
 
-	return M
+	return M+N'
 end
 
 function computeBlock(M::Array{Float64,2},rowpattern::Array{Int,1},colpattern::Array{Int,1},i::Int,j::Int)
@@ -61,18 +60,6 @@ function convertMToSpMBCSR(M::Array{Float64,2},rowpattern::Array{Int,1},colpatte
 	return SpM
 end
 
-function convertSpMToMBCSR(SpM::BCSRSpM)
-	M = fillSpMWithChar(SpM,0.)
-	return M
-end
-
-type symBCSRSpM
-	val::Array{Union{Array{Float64,2},LowerTriangular{Float64,Array{Float64,2}}},1}
-	col::Array{Int,1}
-	rowptr::Array{Int,1}
-	pattern::Array{Int,1}
-end
-
 function convertSMtoSPM(M::Array{Float64,2},pattern::Array{Int,1},tri::Bool)
 	
 	SpM::symBCSRSpM		= symBCSRSpM([],[],[0],pattern)
@@ -98,4 +85,59 @@ function convertSMtoSPM(M::Array{Float64,2},pattern::Array{Int,1},tri::Bool)
 		
 	return SpM
 end
+
+function convertSpMToMBCSR(SpM::BCSRSpM)
+	M = fillSpMWithChar(SpM,0.)
+	return M
+end
+
+function convertSpMToSMBCSR(SpM::symBCSRSpM)
+	dim::Int32			= SpM.pattern[end]
+	M::Array{Any,2} = fill(*,dim,dim)
+	len::Int32			= length(SpM.rowptr)-1
+	δ::Array{Int,1}		= [SpM.rowptr[i+1]-SpM.rowptr[i] for i in 1:len]
+
+	j = 1
+	for i = 1:len
+		z = 0
+		while z < δ[i]
+			a = SpM.pattern[2*(i-1)+1]
+			b = SpM.pattern[2*(i-1)+2]
+			c = SpM.pattern[2*(SpM.col[j]-1)+1]
+			d = SpM.pattern[2*(SpM.col[j]-1)+2]
+			el = SpM.val[j]
+			if a == c && b == d && typeof(SpM.val[j]) == LowerTriangular{Float64,Array{Float64,2}} el = symmetrizeLowerTriangular(el) end
+			M[a:b,c:d] = el
+			M[c:d,a:b] = el
+		
+			#M[SpM.pattern[2*(i-1)+1]:(SpM.pattern[2*(i-1)+2]),SpM.pattern[2*(SpM.col[j]-1)+1]:(SpM.pattern[2*(SpM.col[j]-1)+2])] = SpM.val[j]
+			#M[SpM.pattern[2*(j-1)+1]:(SpM.pattern[2*(j-1)+2]),SpM.pattern[2*(SpM.col[i]-1)+1]:(SpM.pattern[2*(SpM.col[i]-1)+2])] = SpM.val[j]
+			j += 1
+			z += 1
+		end
+	end
+
+	return M			
+end
+
+function fillSpMWithChar(SpM::BCSRSpM,a::Any)
+	dim1::Int32		= SpM.rowpattern[end]
+	dim2::Int32		= SpM.colpattern[end]
+	M::Array{Any,2}	= fill(a,dim1,dim2)
+	len::Int32		= length(SpM.rowptr)-1
+	δ::Array{Int,1}	= [SpM.rowptr[i+1]-SpM.rowptr[i] for i in 1:len]
 	
+	#SpM:pattern ?!
+	j = 1
+	for i = 1:len
+		z = 0
+		while z < δ[i]
+			M[SpM.rowpattern[2*(i-1)+1]:(SpM.rowpattern[2*(i-1)+2]),SpM.colpattern[2*(SpM.col[j]-1)+1]:(SpM.colpattern[2*(SpM.col[j]-1)+2])] = SpM.val[j]
+			j += 1
+			z += 1
+		end
+	end
+
+	return M
+end
+
