@@ -3,39 +3,72 @@ import Base.*
 import QuantumLab
 export BCSRSpM
 
-#Sparse matrix type in block compressed sparse row format
+#"Sparse matrix type in block compressed sparse row format"
 type BCSRSpM
 	val::Array{Array{Float64,2},1}
 	col::Array{Int,1}
 	rowptr::Array{Int,1}
 	rowpattern::Array{Int,1}
 	colpattern::Array{Int,1}
+	function BCSRSpM(M::Array{Float64,2},rowpattern::Array{Int,1},colpattern::Array{Int,1})
+	  (checkPattern(M,rowpattern,1) && checkPattern(M,colpattern,2)) || error("Hey idiot your pattern doesn't match the matrix ᕦ(ò_óˇ)ᕤ")
+      val,col,rowptr = computeBCSRSpMFields(M,rowpattern,colpattern)
+      new(val,col,rowptr,rowpattern,colpattern)
+    end
 end
 
-#Sparse matrix type in block compressed sparse row format for symmetric matrices
+#"Alternative constructor using shells"
+function BCSRSpM(M::Array{Float64,2},basis::Array{QuantumLab.ShellModule.Shell,1}) 
+	BCSRSpM(M::Array{Float64,2},computePatternFromBasis(basis::Array{QuantumLab.ShellModule.Shell,1}),computePatternFromBasis(basis::Array{QuantumLab.ShellModule.Shell,1}))
+end
+
+#"Sparse matrix type in block compressed sparse row format for symmetric matrices"
 type symBCSRSpM
 	val::Array{Union{Array{Float64,2},LowerTriangular{Float64,Array{Float64,2}}},1}
 	col::Array{Int,1}
 	rowptr::Array{Int,1}
 	pattern::Array{Int,1}
+	function symBCSRSpM(M::Array{Float64,2},pattern::Array{Int,1})
+		checkPattern(M,pattern,1) || error("In case of error flip table ╯°□°）╯︵ ┻━┻")
+		val,col,rowptr = convertSMtoSpMBCSR(M,pattern,true)
+		new(val,col,rowptr,pattern)
+	end
 end
 
-#Show BCSRSpM sparse matrix with * for every block norm = 0.
+#"Alternative constructor using shells"
+function symBCSRSpM(M::Array{Float64,2},basis::Array{QuantumLab.ShellModule.Shell,1})
+	symBCSRSpM(M::Array{Float64,2},computePatternFromBasis(basis::Array{QuantumLab.ShellModule.Shell,1}))
+end
+
+#"Show BCSRSpM sparse matrix with * for every block norm = 0."
 function show(io::IO,SpM::BCSRSpM)
 	M = fillSpMWithChar(SpM,*)
 	display(M)
 end
 
-#Show symBCSRSpM sparse matrix with * for every block norm = 0.
+#"Show symBCSRSpM sparse matrix with * for every block norm = 0."
 function show(io::IO,SpM::symBCSRSpM)
 	M = fillSpMWithChar(SpM,*)
 	display(M)
 end
 
-#Define multiplication for BCSRSpM sparse matrix with vector
+#"Function checks pattern for 1. first element 1, 2. last element dimension of matrix, 3. gaplessness"
+function checkPattern(M::Array{Float64,2},pattern::Array{Int,1},dim::Int)
+	check::Bool = true
+	if pattern[1] != 1 return false end
+	if pattern[end] != size(M,dim) return false end
+	s::Int32        = length(pattern)/2-1
+	for i = 1:s
+		if pattern[2*(i-1)+2]+1 != pattern[2*(i-1)+3] return false end
+	end
+
+	return check
+end
+
+#"Define multiplication for BCSRSpM sparse matrix with vector"
 *(SpM::BCSRSpM,vec::Array{Float64,1}) = multiplySpMV(SpM,vec)
 
-#Function generates pattern from shells
+#"Function generates pattern from shells"
 function computePatternFromBasis(basis::Array{QuantumLab.ShellModule.Shell,1})
     nbf     = []
     pattern = []
@@ -51,11 +84,23 @@ function computePatternFromBasis(basis::Array{QuantumLab.ShellModule.Shell,1})
         sum += nbf[i]
     end
 
-    return pattern
+    return Array{Int64,1}(pattern)
 end
 
-#TODO for loop kuerzer schreiben
-#Converts a LowerTriangular to the corresponding symmetric matrix
+#"TODO"
+function test(M::Array{Float64,2},basis)
+	if issymmetric(M)
+		pattern = computePatternFromBasis(basis::Array{QuantumLab.ShellModule.Shell,1})
+		SpM	= symBCSRSpM([],[],[0],[1,2,3])
+	else 
+		rowpattern
+		SpM = BCSRSpM([],[],[0],rowpattern,colpattern)
+	end
+	return typeof(SpM)
+end
+
+#"TODO for loop kuerzer schreiben"
+#"Converts a LowerTriangular to the corresponding symmetric matrix"
 function symmetrizeLowerTriangular(lt::LowerTriangular{Float64,Array{Float64,2}})
 	M::Array{Float64,2} = Array{Float64,2}(lt)
 	n					= size(M,1)
@@ -68,52 +113,47 @@ function symmetrizeLowerTriangular(lt::LowerTriangular{Float64,Array{Float64,2}}
 	return M+N'
 end
 
-#Computes the dimension of block to be stored
+#"Computes the dimension of block to be stored"
 function computeBlock(M::Array{Float64,2},rowpattern::Array{Int,1},colpattern::Array{Int,1},i::Int,j::Int)
 	block = M[rowpattern[2*(i-1)+1]:(rowpattern[2*(i-1)+2]),colpattern[2*(j-1)+1]:(colpattern[2*(j-1)+2])]
 	return block
 end 
 
-function test(M::Array{Float64,2},basis)
+#"Function computes val,col,rowptr for a matrix with given pattern: BCSRSpM"
+function computeBCSRSpMFields(M::Array{Float64,2},rowpattern::Array{Int,1},colpattern::Array{Int,1})
 	
-	if issymmetric(M)
-		pattern = computePatternFromBasis(basis::Array{QuantumLab.ShellModule.Shell,1})
-		SpM	= symBCSRSpM([],[],[0],[1,2,3])
-	else 
-		rowpattern
-		SpM = BCSRSpM([],[],[0],rowpattern,colpattern)
-	end
-	return typeof(SpM)
-end
-
-function convertMToSpMBCSR(M::Array{Float64,2},rowpattern::Array{Int,1},colpattern::Array{Int,1})
-	
-	SpM::BCSRSpM	= BCSRSpM([],[],[0],rowpattern,colpattern)
+	#SpM::BCSRSpM	= BCSRSpM([],[],[0],rowpattern,colpattern)
 	s1::Int32		= length(rowpattern)/2 
 	s2::Int32		= length(colpattern)/2
 	nnzb			= 0
-	
+	val				= []
+	col				= []
+	rowptr			= [0]
+
 	for i = 1:s1
 		for j = 1:s2
 			block = computeBlock(M,rowpattern,colpattern,i,j)
 			if norm(block) != 0.
-				push!(SpM.val, block)
-				push!(SpM.col,j)
+				push!(val, block)
+				push!(col,j)
 				nnzb += 1
 			end
 		end
-		push!(SpM.rowptr,nnzb)
+		push!(rowptr,nnzb)
 	end
 
-	return SpM
+	return val,col,rowptr
 end
 
-function convertSMtoSPMBCSR(M::Array{Float64,2},pattern::Array{Int,1},tri::Bool)
+#"Function computes val,col,rowptr for a matrix with given pattern: symBCSRSpM"
+function convertSMtoSpMBCSR(M::Array{Float64,2},pattern::Array{Int,1},tri::Bool)
 	
-	SpM::symBCSRSpM		= symBCSRSpM([],[],[0],pattern)
 	s::Int32		= length(pattern)/2
 	nnzb			= 0
-	
+	val				= []
+	col				= []
+	rowptr			= [0]
+
 	for i = 1:s
 		for j = 1:s
 			if j <= i
@@ -122,16 +162,16 @@ function convertSMtoSPMBCSR(M::Array{Float64,2},pattern::Array{Int,1},tri::Bool)
 					block = LowerTriangular(block)
 				end
 				if norm(block) != 0.
-					push!(SpM.val,block)
-					push!(SpM.col,j)
+					push!(val,block)
+					push!(col,j)
 					nnzb += 1
 				end
 			end
 		end
-		push!(SpM.rowptr,nnzb)
+		push!(rowptr,nnzb)
 	end
 		
-	return SpM
+	return val,col,rowptr
 end
 
 function convertSpMToMBCSR(SpM::BCSRSpM)
@@ -202,7 +242,7 @@ function computeDifferenceRowptr(i::Int,rowptr)
 	return a,b
 end
 
-#Apply pattern of sparse matrix to a vector
+#"Apply pattern of sparse matrix to a vector"
 function convertVToBV(vec::Array{Float64,1},SpM::BCSRSpM)
 	len::Int64							= Int64(round(length(SpM.colpattern)/2,0))
 	blockvec::Array{Array{Float64,1}}	= []
@@ -213,7 +253,7 @@ function convertVToBV(vec::Array{Float64,1},SpM::BCSRSpM)
 	return blockvec
 end
 
-#Function multiplies BCSR sparse matrix with vector
+#"Function multiplies BCSR sparse matrix with vector"
 function multiplySpMV(SpM::BCSRSpM,vec::Array{Float64,1})
 	len						= length(SpM.rowptr)-1
 	res::Array{Float64,1}	= zeros(length(vec)) 

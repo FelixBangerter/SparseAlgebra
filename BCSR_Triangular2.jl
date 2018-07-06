@@ -74,18 +74,6 @@ function computeBlock(M::Array{Float64,2},rowpattern::Array{Int,1},colpattern::A
 	return block
 end 
 
-function test(M::Array{Float64,2},basis)
-	
-	if issymmetric(M)
-		pattern = computePatternFromBasis(basis::Array{QuantumLab.ShellModule.Shell,1})
-		SpM	= symBCSRSpM([],[],[0],[1,2,3])
-	else 
-		rowpattern
-		SpM = BCSRSpM([],[],[0],rowpattern,colpattern)
-	end
-	return typeof(SpM)
-end
-
 function convertMToSpMBCSR(M::Array{Float64,2},rowpattern::Array{Int,1},colpattern::Array{Int,1})
 	
 	SpM::BCSRSpM	= BCSRSpM([],[],[0],rowpattern,colpattern)
