@@ -1,6 +1,5 @@
 import Base.show
 import Base.*
-import QuantumLab
 export BCSRSpM
 
 #Sparse matrix type in block compressed sparse row format
@@ -22,25 +21,6 @@ end
 
 *(SpM::BCSRSpM,vec::Array{Float64,1}) = multiplySpMV(SpM,vec)
 
-#Funktion generiert Pattern aus Basis nach Shells
-function computePatternFromBasis(basis::Array{QuantumLab.ShellModule.Shell,1})
-    nbf     = []
-    pattern = []
-    sum     = 1
-    [push!(nbf,QuantumLab.ShellModule.nbf(basis[i])) for i in 1:length(basis)]
-    δ = [nbf[i+1]-nbf[i] for i in 1:length(nbf)-1]
-    δ = vcat(0,δ)
-    [if(δ[i]<0) δ[i] = 0. end for i in 1:length(nbf)]
-    
-    for i = 1:length(nbf)
-        push!(pattern,sum)
-        push!(pattern,sum+δ[i])
-        sum += nbf[i]
-    end
-
-    return pattern
-end
-
 function show(io::IO, SpM::BCSRSpM)
 	M = fillSpMWithChar(SpM,*)
 	display(M)
@@ -61,15 +41,19 @@ end
 
 #Computes the dimension of block to be stored
 function computeBlock(M::Array{Float64,2},rowpattern::Array{Int,1},colpattern::Array{Int,1},i::Int,j::Int)
-	block = M[rowpattern[2*(i-1)+1]:(rowpattern[2*(i-1)+2]),colpattern[2*(j-1)+1]:(colpattern[2*(j-1)+2])]
+	if i == 1 && j == 1	block = M[1:rowpattern[1],1:colpattern[1]]
+	elseif i == 1		block = M[1:rowpattern[1],colpattern[j-1]+1:colpattern[j]]
+	elseif j == 1		block = M[rowpattern[i-1]+1:rowpattern[i],1:colpattern[1]]
+	else				block = M[rowpattern[i-1]+1:rowpattern[i],colpattern[j-1]+1:colpattern[j]]
+	end
 	return block
 end 
 
 function convertMToSpMBCSR(M::Array{Float64,2},rowpattern::Array{Int,1},colpattern::Array{Int,1})
 	
 	SpM::BCSRSpM	= BCSRSpM([],[],[0],rowpattern,colpattern)
-	s1::Int32		= length(rowpattern)/2 
-	s2::Int32		= length(colpattern)/2
+	s1::Int32		= length(rowpattern) 
+	s2::Int32		= length(colpattern)
 	nnzb			= 0
 	
 	for i = 1:s1
@@ -90,8 +74,8 @@ end
 function convertSMtoSPM(M::Array{Float64,2},pattern::Array{Int,1},tri::Bool)
 	
 	SpM::symBCSRSpM		= symBCSRSpM([],[],[0],pattern)
-	s::Int32		= length(pattern)/2
-	nnzb			= 0
+	s::Int32			= length(pattern)
+	nnzb				= 0
 	
 	for i = 1:s
 		for j = 1:s
@@ -126,10 +110,27 @@ function computeSegmentForBlock(SpM::Union{BCSRSpM,symBCSRSpM},i,j)
 		rowpattern = SpM.pattern
 		colpattern = SpM.pattern
 	end
-	a = rowpattern[2*(i-1)+1]
-	b = rowpattern[2*(i-1)+2]
-	c = colpattern[2*(SpM.col[j]-1)+1]
-	d = colpattern[2*(SpM.col[j]-1)+2]
+	if i == 1 && j == 1 
+		a = 1
+		b = rowpattern[1]
+		c = 1
+		d = colpattern[2]
+	elseif i == 1
+		a = 1
+		b = rowpattern[1]
+		c = colpattern[SpM.col[j]-1]+1
+		d = colpattern[SpM.col[j]]
+	elseif j == 1
+		a = rowpattern[i-1]+1
+		b = rowpattern[i]
+		c = 1
+		d = colpattern[SpM.col[1]]
+	else 
+		a = rowpattern[i-1]+1
+		b = rowpattern[i]
+		c = colpattern[SpM.col[j]-1]+1
+		d = colpattern[SpM.col[j]]
+	end
 
 	return a,b,c,d
 end
@@ -168,6 +169,7 @@ function fillSpMWithChar(SpM::BCSRSpM,a::Any)
 	for i = 1:len
 		z = 0
 		while z < δ[i]
+		println(i,j)
 			a,b,c,d = computeSegmentForBlock(SpM,i,j)
 			M[a:b,c:d] = SpM.val[j]
 			j += 1
@@ -209,7 +211,7 @@ function multiplySpMV(SpM::BCSRSpM,vec::Array{Float64,1})
 	
 	return res
 end
-
+#
 #function multiplySpMM(SpM::BCSRSpM,M::Array{Float64,2})
 #	len = length(SpM.rowptr) -1
 #	current_row = 1
