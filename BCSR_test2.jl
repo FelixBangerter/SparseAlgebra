@@ -71,6 +71,9 @@ end
 #"Define multiplication for BCSRSpM sparse matrix with dense matrix"
 *(SpM::BCSRSpM,M::Array{Float64,2}) = multiplySpMM(SpM,M)
 
+#"Define multiplication for BCSRSpM sparse matrix with BCSRSpM sparse matrix"
+*(SpM1::BCSRSpM,SpM2::BCSRSpM) = multiplySpMSpM(SpM1,SpM2)
+
 #"Function generates pattern from shells"
 function computePatternFromBasis(basis::Array{QuantumLab.ShellModule.Shell,1})
     nbf     = []
@@ -86,7 +89,6 @@ function computePatternFromBasis(basis::Array{QuantumLab.ShellModule.Shell,1})
         push!(pattern,sum+δ[i])
         sum += nbf[i]
     end
-
     return Array{Int64,1}(pattern)
 end
 
@@ -281,29 +283,59 @@ function computeRowFromRowptr(SpM::BCSRSpM)
 	end
 	return row
 end
-	
-function applyPatternOfSpMToM(SpM::BCSRSpM,M::Array{Float64,2})
+
+function computeTupelPatternFromPattern(pattern::Array{Int,1})
+	len								= Int64(round(length(pattern)/2,0))
+	a::Array{Tuple{Int64,Int64},1}	= []
+	[push!(a,(pattern[2*(i-1)+1],pattern[2*(i-1)+2])) for i in 1:len]
+	return a
 end
 
 function multiplySpMM(SpM::BCSRSpM,M::Array{Float64,2})
+	if SpM.colpattern[end] != size(M,1) error("Dimensions do not match ԅ(≖‿≖ԅ)") end
+	
 	collen							= Int64(round(length(SpM.colpattern)/2,0))
 	a::Array{Tuple{Int64,Int64},1}	= []
 	[push!(a,(SpM.colpattern[2*(i-1)+1],SpM.colpattern[2*(i-1)+2])) for i in 1:collen]
 	
 	s = size(M,2)
-	rowpattern = SpM.rowpattern[1:findfirst(SpM.rowpattern,s)]
+	rowpattern = SpM.rowpattern[1:findlast(SpM.rowpattern,s)]
 	rowlen							= Int64(round(length(rowpattern)/2,0))
 	b::Array{Tuple{Int64,Int64},1}	= []
 	[push!(b,(rowpattern[2*(i-1)+1],rowpattern[2*(i-1)+2])) for i in 1:rowlen]	
-
-	res = zeros(SpM.rowpattern[end],size(M,2))
-		
+	
+	res = zeros(SpM.rowpattern[end],size(M,2))	
 	row = computeRowFromRowptr(SpM)	
-
+	
 	for i = 1:length(SpM.val)
 		for j = 1:length(b)
-			res[b[row[i]][1]:b[row[i]][2],b[j][1]:b[j][2]] += SpM.val[i]*M[a[SpM.col[i]][1]:a[SpM.col[i]][2],b[j][1]:b[j][2]]
+			res[a[row[i]][1]:a[row[i]][2],b[j][1]:b[j][2]] += SpM.val[i]*M[a[SpM.col[i]][1]:a[SpM.col[i]][2],b[j][1]:b[j][2]]
 		end
 	end
 	return res
+end
+
+function multiplySpMSpM(SpM1::BCSRSpM,SpM2::BCSRSpM)
+	res = zeros(SpM1.rowpattern[end],SpM2.colpattern[end])
+	row1 = computeRowFromRowptr(SpM1)
+	row2 = computeRowFromRowptr(SpM2)
+
+	a = computeTupelPatternFromPattern(SpM1.colpattern)
+	b = computeTupelPatternFromPattern(SpM2.rowpattern)
+
+#	collen = Int64(round(length(SpM1.colpattern)/2,0))
+#	a = []
+#	[push!(a,(SpM1.colpattern[2*(i-1)+1],SpM1.colpattern[2*(i-1)+2])) for i in 1:collen]
+#
+#	rowlen = Int64(round(length(SpM2.colpattern)/2,0))
+#	b = []
+#	[push!(b,(SpM2.rowpattern[2*(i-1)+1],SpM2.rowpattern[2*(i-1)+2])) for i in 1:rowlen]
+	
+	for i = 1:length(SpM1.val), j = 1:length(SpM2.val)
+			if SpM1.col[i] == row2[j]
+				res[a[row1[i]][1]:a[row1[i]][2],b[SpM2.col[j]][1]:b[SpM2.col[j]][2]] += SpM1.val[i]*SpM2.val[j]
+			end
+	end
+	return res
+
 end
